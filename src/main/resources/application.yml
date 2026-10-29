@@ -1,0 +1,26 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: oa-ticket-agent
+
+  datasource:
+    # 相对路径，数据库文件会生成在项目根目录
+    url: jdbc:sqlite:oa-ticket.db
+    driver-class-name: org.sqlite.JDBC
+
+  sql:
+    init:
+      # SQLite 不被 Spring Boot 当作内嵌数据库，默认不会执行初始化脚本，
+      # 所以这里必须显式设成 always
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+      # Windows 下不指定编码容易把中文读成乱码
+      encoding: UTF-8
+      continue-on-error: false
+
+logging:
+  level:
+    com.example.oaticket: DEBUG

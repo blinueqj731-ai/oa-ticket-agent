@@ -1,0 +1,33 @@
+# 编译产物
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# 本地数据库（启动时由 schema.sql / data.sql 自动重建，不入库）
+*.db
+*.db-journal
+*.sqlite
+
+# 密钥（绝对不要提交）
+.env
+.env.local
+*.key
+
+# 日志
+*.log
+logs/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini

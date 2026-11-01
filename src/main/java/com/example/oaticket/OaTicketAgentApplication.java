@@ -2,6 +2,7 @@ package com.example.oaticket;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * 项目启动类
@@ -15,6 +16,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 其他类都放在它的子包里，不然扫描不到。
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan
 public class OaTicketAgentApplication {
 
     public static void main(String[] args) {

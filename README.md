@@ -99,7 +99,7 @@ cd oa-ticket-agent
 mvn spring-boot:run
 ```
 
-启动后访问：
+数据查询接口不需要额外配置，启动即可用：
 
 ```bash
 # 健康检查
@@ -110,6 +110,25 @@ curl http://localhost:8080/api/tickets
 
 # 按编号查单条
 curl http://localhost:8080/api/tickets/T-20261001-001
+```
+
+调用大模型前需要先设置两个环境变量：
+
+```bash
+export DASHSCOPE_API_KEY="百炼 API Key"
+export BAILIAN_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+```
+
+```bash
+# 单轮对话
+curl -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"用一句话说明什么是OA审批流程"}'
+
+# 工单处理，模型会自行调用工具查数据
+curl -X POST http://localhost:8080/api/agent/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"question":"T-20261001-001 现在是什么状态？"}'
 ```
 
 数据库文件 `oa-ticket.db` 会在首次启动时自动生成，包含 10 个员工、8 条审批规则、20 张工单。
@@ -132,7 +151,7 @@ mvn test
 
 - [x] 工单数据模型与查询接口
 - [x] 三个数据查询工具（含 10 个单元测试）
-- [ ] 大模型接入
+- [x] 大模型接入
 - [ ] Agent 循环与工具调用
 - [ ] 循环有界控制（步数 / 超时 / token 预算）
 - [ ] 危险操作人工确认

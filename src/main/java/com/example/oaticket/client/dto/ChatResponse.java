@@ -12,7 +12,7 @@ public record ChatResponse(List<Choice> choices, Usage usage) {
     /**
      * 取第一条回复的正文
      *
-     * @return 回复正文；没有返回内容时返回 null
+     * @return 回复正文；模型只请求调工具时返回 null
      */
     public String content() {
         if (choices == null || choices.isEmpty()) {
@@ -34,6 +34,19 @@ public record ChatResponse(List<Choice> choices, Usage usage) {
     }
 
     /**
+     * 取第一条回复里的工具调用请求
+     *
+     * @return 工具调用列表；模型没有请求调工具时返回空列表
+     */
+    public List<ToolCall> toolCalls() {
+        if (choices == null || choices.isEmpty()) {
+            return List.of();
+        }
+        List<ToolCall> calls = choices.get(0).message().toolCalls();
+        return calls == null ? List.of() : calls;
+    }
+
+    /**
      * 单条候选回复
      */
     public record Choice(Message message, @JsonProperty("finish_reason") String finishReason) {
@@ -45,7 +58,8 @@ public record ChatResponse(List<Choice> choices, Usage usage) {
     public record Message(
             String role,
             String content,
-            @JsonProperty("reasoning_content") String reasoningContent) {
+            @JsonProperty("reasoning_content") String reasoningContent,
+            @JsonProperty("tool_calls") List<ToolCall> toolCalls) {
     }
 
     /**

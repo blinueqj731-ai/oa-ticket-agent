@@ -2,6 +2,7 @@ package com.example.oaticket.client;
 
 import com.example.oaticket.client.dto.ChatRequest;
 import com.example.oaticket.client.dto.ChatResponse;
+import com.example.oaticket.client.dto.ToolDefinition;
 import com.example.oaticket.config.LlmProperties;
 import com.example.oaticket.model.ChatResult;
 import org.slf4j.Logger;
@@ -26,6 +27,7 @@ public class LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
     private static final int MAX_OUTPUT_TOKENS = 1024;
+    private static final double TEMPERATURE = 0.7;
 
     private final LlmProperties properties;
     private final RestClient restClient;
@@ -51,6 +53,35 @@ public class LlmClient {
         if (userMessage == null || userMessage.isBlank()) {
             throw new IllegalArgumentException("消息内容不能为空");
         }
+
+        long start = System.currentTimeMillis();
+        ChatResponse response = send(List.of(ChatRequest.Message.user(userMessage)), null);
+        long elapsed = System.currentTimeMillis() - start;
+
+        if (response.content() == null) {
+            // 思考模式下正文可能为空而 reasoning_content 有值，这种情况要单独提示
+            if (response.reasoningContent() != null) {
+                throw new IllegalStateException("模型返回了思考内容但正文为空，确认请求中已关闭思考模式");
+            }
+            throw new IllegalStateException("大模型返回内容为空");
+        }
+
+        return new ChatResult(response.content(),
+                promptTokens(response), completionTokens(response), totalTokens(response), elapsed);
+    }
+
+    /**
+     * 发送完整的对话上下文，可携带工具定义
+     *
+     * @param messages 完整消息列表，包含系统提示、用户输入、以及历史的工具调用与结果
+     * @param tools 可用工具定义，传 null 表示本次不允许调用工具
+     * @return 模型原始响应，正文可能为空而只带工具调用请求
+     */
+    public ChatResponse chat(List<ChatRequest.Message> messages, List<ToolDefinition> tools) {
+        return send(messages, tools);
+    }
+
+    private ChatResponse send(List<ChatRequest.Message> messages, List<ToolDefinition> tools) {
         // 密钥缺失时直接报错，否则会带着空的 Authorization 头去调接口，只拿到一个 401
         if (properties.apiKey() == null || properties.apiKey().isBlank()) {
             throw new IllegalStateException("未配置大模型密钥，请设置环境变量 DASHSCOPE_API_KEY");
@@ -58,9 +89,10 @@ public class LlmClient {
 
         ChatRequest request = new ChatRequest(
                 properties.model(),
-                List.of(ChatRequest.Message.user(userMessage)),
+                messages,
+                tools,
                 MAX_OUTPUT_TOKENS,
-                0.7,
+                TEMPERATURE,
                 false,
                 false);
 
@@ -81,22 +113,27 @@ public class LlmClient {
         }
         long elapsed = System.currentTimeMillis() - start;
 
-        if (response == null || response.content() == null) {
-            // 思考模式下正文可能为空而 reasoning_content 有值，这种情况要单独提示
-            if (response != null && response.reasoningContent() != null) {
-                throw new IllegalStateException("模型返回了思考内容但正文为空，确认请求中已关闭思考模式");
-            }
-            throw new IllegalStateException("大模型返回内容为空");
+        if (response == null) {
+            throw new IllegalStateException("大模型返回为空");
         }
 
-        int promptTokens = response.usage() == null ? 0 : response.usage().promptTokens();
-        int completionTokens = response.usage() == null ? 0 : response.usage().completionTokens();
-        int totalTokens = response.usage() == null ? 0 : response.usage().totalTokens();
+        log.info("大模型调用完成 model={} 耗时={}ms token={}+{} 可用工具数={}",
+                properties.model(), elapsed, promptTokens(response), completionTokens(response),
+                tools == null ? 0 : tools.size());
 
-        log.info("大模型调用完成 model={} 耗时={}ms token={}+{}",
-                properties.model(), elapsed, promptTokens, completionTokens);
+        return response;
+    }
 
-        return new ChatResult(response.content(), promptTokens, completionTokens, totalTokens, elapsed);
+    private int promptTokens(ChatResponse response) {
+        return response.usage() == null ? 0 : response.usage().promptTokens();
+    }
+
+    private int completionTokens(ChatResponse response) {
+        return response.usage() == null ? 0 : response.usage().completionTokens();
+    }
+
+    private int totalTokens(ChatResponse response) {
+        return response.usage() == null ? 0 : response.usage().totalTokens();
     }
 
     private SimpleClientHttpRequestFactory requestFactory(int timeoutSeconds) {

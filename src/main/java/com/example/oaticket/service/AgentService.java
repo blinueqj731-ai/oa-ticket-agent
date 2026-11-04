@@ -4,7 +4,9 @@ import com.example.oaticket.client.LlmClient;
 import com.example.oaticket.client.dto.ChatRequest;
 import com.example.oaticket.client.dto.ChatResponse;
 import com.example.oaticket.client.dto.ToolCall;
+import com.example.oaticket.config.AgentProperties;
 import com.example.oaticket.model.AgentResult;
+import com.example.oaticket.model.StopReason;
 import com.example.oaticket.tool.ToolRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,15 +18,13 @@ import java.util.List;
 /**
  * 工单处理 Agent
  *
- * 循环执行"调模型、执行工具、把结果回传"这套流程，直到模型不再请求工具为止
+ * 循环执行"调模型、执行工具、把结果回传"，直到模型不再请求工具为止。
+ * 步数、墙钟、token 三个上限任一触发都会停止循环并降级，不抛异常
  */
 @Service
 public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
-
-    // 步数上限先给一个宽松的值，防止模型反复调工具停不下来
-    private static final int MAX_STEPS = 10;
 
     private static final String SYSTEM_PROMPT = """
             你是 OA 工单处理助手。你可以调用工具查询系统里的真实数据，共有三个：
@@ -47,17 +47,19 @@ public class AgentService {
 
     private final LlmClient llmClient;
     private final ToolRegistry toolRegistry;
+    private final AgentProperties agentProperties;
 
-    public AgentService(LlmClient llmClient, ToolRegistry toolRegistry) {
+    public AgentService(LlmClient llmClient, ToolRegistry toolRegistry, AgentProperties agentProperties) {
         this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
+        this.agentProperties = agentProperties;
     }
 
     /**
      * 处理一次工单咨询
      *
      * @param question 用户的问题
-     * @return 最终回复、中途的工具调用记录与总 token 消耗
+     * @return 最终回复、工具调用记录、总 token、结束原因与执行步数
      */
     public AgentResult handle(String question) {
         if (question == null || question.isBlank()) {
@@ -71,20 +73,33 @@ public class AgentService {
         List<AgentResult.ToolInvocation> invocations = new ArrayList<>();
         int totalTokens = 0;
         int step = 0;
+        long deadline = System.currentTimeMillis() + agentProperties.timeoutSeconds() * 1000L;
 
-        while (step < MAX_STEPS) {
-            step++;
-            ChatResponse response = llmClient.chat(messages, toolRegistry.definitions());
-            totalTokens += totalTokens(response);
-
-            List<ToolCall> toolCalls = response.toolCalls();
-            if (toolCalls.isEmpty()) {
-                log.info("第 {} 步：模型给出结论，处理结束 工具调用={} 次 总token={}",
-                        step, invocations.size(), totalTokens);
-                return new AgentResult(response.content(), invocations, totalTokens);
+        while (step < agentProperties.maxSteps()) {
+            // 墙钟按"整次请求"计算而不是单步，避免步数少但每步都慢的情况漏网
+            if (System.currentTimeMillis() > deadline) {
+                return degrade(StopReason.TIMEOUT, step, invocations, totalTokens);
+            }
+            // 预算检查放在发送请求之前，避免明知超预算还发一次
+            if (totalTokens > agentProperties.tokenBudget()) {
+                return degrade(StopReason.TOKEN_BUDGET, step, invocations, totalTokens);
             }
 
-            log.info("第 {} 步：模型请求调用 {} 个工具", step, toolCalls.size());
+            step++;
+            long stepStart = System.currentTimeMillis();
+            ChatResponse response = llmClient.chat(messages, toolRegistry.definitions());
+            long stepElapsed = System.currentTimeMillis() - stepStart;
+            int stepTokens = totalTokens(response);
+            totalTokens += stepTokens;
+
+            List<ToolCall> toolCalls = response.toolCalls();
+            log.info("第 {} 步 | 耗时={}ms | 本步token={} | 累计token={} | 请求工具={} 个",
+                    step, stepElapsed, stepTokens, totalTokens, toolCalls.size());
+
+            if (toolCalls.isEmpty()) {
+                log.info("处理完成 | 共 {} 步 | 工具调用={} 次 | 总token={}", step, invocations.size(), totalTokens);
+                return new AgentResult(response.content(), invocations, totalTokens, StopReason.COMPLETED, step);
+            }
 
             // 必须把模型的调用请求原样放回上下文，否则下一轮的 tool 消息找不到对应的 tool_call_id
             messages.add(ChatRequest.Message.assistant(response.content(), toolCalls));
@@ -97,12 +112,30 @@ public class AgentService {
             }
         }
 
-        log.warn("达到步数上限 {}，强制结束 工具调用={} 次 总token={}",
-                MAX_STEPS, invocations.size(), totalTokens);
+        return degrade(StopReason.MAX_STEPS, step, invocations, totalTokens);
+    }
 
-        return new AgentResult(
-                "处理过程超过 " + MAX_STEPS + " 步仍未得出结论，已中止。已调用的工具记录见 toolInvocations",
-                invocations, totalTokens);
+    /**
+     * 构造降级结果
+     *
+     * 降级不抛异常，把已收集到的信息一并返回，交给人工接手
+     *
+     * @param reason 触发的中止原因
+     * @param steps 已执行的步数
+     * @param invocations 已完成的工具调用
+     * @param totalTokens 已消耗的 token
+     * @return 带中止标记的结果
+     */
+    private AgentResult degrade(StopReason reason, int steps,
+                                List<AgentResult.ToolInvocation> invocations, int totalTokens) {
+        log.warn("Agent 被迫中止 | 原因={} | 已执行={} 步 | 工具调用={} 次 | 累计token={}",
+                reason.displayName(), steps, invocations.size(), totalTokens);
+
+        String content = "处理未完成：" + reason.displayName()
+                + "。已执行 " + steps + " 步、调用工具 " + invocations.size() + " 次，"
+                + "已收集到的数据见 toolInvocations，建议转人工继续处理。";
+
+        return new AgentResult(content, invocations, totalTokens, reason, steps);
     }
 
     private int totalTokens(ChatResponse response) {

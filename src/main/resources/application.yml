@@ -31,3 +31,11 @@ llm:
   base-url: ${BAILIAN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
   model: ${BAILIAN_MODEL:deepseek-v4.1-flash}
   timeout-seconds: 60
+
+agent:
+  # 模型最多来回几轮，超了就降级转人工
+  max-steps: 6
+  # 单次请求的墙钟上限，按实测最坏延迟（12 秒）乘以预计步数留的余量
+  timeout-seconds: 60
+  # 单次处理的 token 上限，实测 3 步工单约 3200 token
+  token-budget: 8000

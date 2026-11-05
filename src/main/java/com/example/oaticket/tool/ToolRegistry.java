@@ -24,13 +24,16 @@ public class ToolRegistry {
     private final TicketTool ticketTool;
     private final EmployeeTool employeeTool;
     private final RuleTool ruleTool;
+    private final TicketActionTool ticketActionTool;
     private final ObjectMapper objectMapper;
 
     public ToolRegistry(TicketTool ticketTool, EmployeeTool employeeTool,
-                        RuleTool ruleTool, ObjectMapper objectMapper) {
+                        RuleTool ruleTool, TicketActionTool ticketActionTool,
+                        ObjectMapper objectMapper) {
         this.ticketTool = ticketTool;
         this.employeeTool = employeeTool;
         this.ruleTool = ruleTool;
+        this.ticketActionTool = ticketActionTool;
         this.objectMapper = objectMapper;
     }
 
@@ -39,7 +42,7 @@ public class ToolRegistry {
      *
      * description 写得好不好，直接决定模型会不会在正确的时机调对工具
      *
-     * @return 三个工具的定义列表
+     * @return 四个工具的定义列表
      */
     public List<ToolDefinition> definitions() {
         return List.of(
@@ -66,7 +69,21 @@ public class ToolRegistry {
                                 "properties", Map.of(
                                         "ticketType", Map.of("type", "string",
                                                 "description", "工单类型，只能是：报销、请假、权限申请、设备报修")),
-                                "required", List.of("ticketType"))));
+                                "required", List.of("ticketType"))),
+                ToolDefinition.function(
+                        "propose_ticket_decision",
+                        "提交工单状态变更提案。注意这个工具只生成待确认的提案，不会真正修改工单，"
+                                + "必须由人工调用确认接口后才生效。用户要求通过或驳回某张工单时使用",
+                        Map.of("type", "object",
+                                "properties", Map.of(
+                                        "ticketNo", Map.of("type", "string",
+                                                "description", "工单编号，格式 T-YYYYMMDD-NNN"),
+                                        "decision", Map.of("type", "string",
+                                                "enum", List.of("APPROVED", "REJECTED"),
+                                                "description", "目标状态：APPROVED 表示通过，REJECTED 表示驳回"),
+                                        "reason", Map.of("type", "string",
+                                                "description", "变更理由，会写入审计日志，不能为空")),
+                                "required", List.of("ticketNo", "decision", "reason"))));
     }
 
     /**
@@ -89,6 +106,8 @@ public class ToolRegistry {
                 case "get_ticket" -> ticketTool.getTicket(text(args, "ticketNo"));
                 case "get_employee" -> employeeTool.getEmployee(text(args, "employeeNo"));
                 case "get_rules" -> ruleTool.getRules(text(args, "ticketType"));
+                case "propose_ticket_decision" -> ticketActionTool.proposeDecision(
+                        text(args, "ticketNo"), text(args, "decision"), text(args, "reason"));
                 default -> Map.of("success", false, "message", "不存在名为 " + name + " 的工具");
             };
             return objectMapper.writeValueAsString(result);

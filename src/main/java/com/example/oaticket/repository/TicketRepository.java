@@ -57,6 +57,23 @@ public class TicketRepository {
     }
 
     /**
+     * 带状态校验地更新工单状态
+     *
+     * SQL 里带 oldStatus 条件，是乐观锁：只有当前状态仍等于提案时记录的状态才更新。
+     * 如果两次操作之间工单被别人改过，这里会返回 0，调用方据此判定提案失效，
+     * 避免后一次确认悄悄覆盖前一次的结果。
+     *
+     * @param ticketNo 工单编号
+     * @param oldStatus 期望的当前状态
+     * @param newStatus 目标状态
+     * @return 实际更新的行数，0 表示状态已被其他操作改过
+     */
+    public int updateStatus(String ticketNo, String oldStatus, String newStatus) {
+        String sql = "UPDATE tickets SET status = ? WHERE ticket_no = ? AND status = ?";
+        return jdbcTemplate.update(sql, newStatus, ticketNo, oldStatus);
+    }
+
+    /**
      * 把结果集的一行映射成 Ticket 对象
      * SQLite 里 amount 是 NULL 时，getDouble 会返回 0，
      * 必须紧跟一次 wasNull() 判断，否则"没有金额"会被当成"金额为零"。

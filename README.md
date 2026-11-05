@@ -131,6 +131,23 @@ curl -X POST http://localhost:8080/api/agent/ticket \
   -d '{"question":"T-20261001-001 现在是什么状态？"}'
 ```
 
+模型没有修改工单状态的权限。它想通过或驳回某张单时，只能生成一条待确认提案：
+
+```bash
+# 查看待确认提案
+curl http://localhost:8080/api/approvals/pending
+
+# 人工确认，工单状态此时才真正变更
+curl -X POST http://localhost:8080/api/approvals/P-1A2B3C4D/confirm \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"张三"}'
+
+# 或者驳回，工单状态保持不变
+curl -X POST http://localhost:8080/api/approvals/P-1A2B3C4D/reject \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"张三"}'
+```
+
 数据库文件 `oa-ticket.db` 会在首次启动时自动生成，包含 10 个员工、8 条审批规则、20 张工单。
 
 用 Navicat 或 DB Browser for SQLite 打开这个文件可以直接查看数据。
@@ -154,7 +171,7 @@ mvn test
 - [x] 大模型接入
 - [x] Agent 循环与工具调用
 - [x] 循环有界控制（步数 / 超时 / token 预算）
-- [ ] 危险操作人工确认
+- [x] 危险操作人工确认
 - [ ] 链路追踪与结构化日志
 - [ ] 评测集与基线报告
 - [ ] Docker 部署

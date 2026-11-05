@@ -47,6 +47,24 @@ CREATE TABLE IF NOT EXISTS operation_logs (
     created_at TEXT NOT NULL
 );
 
+-- 待确认提案表
+-- 模型想修改工单状态时不直接动 tickets，而是往这张表写一条提案，
+-- 等人工调用确认接口后才真正落地。写操作与只读查询由此彻底分开
+CREATE TABLE IF NOT EXISTS ticket_proposals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    proposal_id TEXT NOT NULL UNIQUE,
+    ticket_no   TEXT NOT NULL,
+    from_status TEXT NOT NULL,
+    to_status   TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'PENDING',
+    created_at  TEXT NOT NULL,
+    decided_at  TEXT,
+    operator    TEXT
+);
+
 -- 常用查询加索引：按单号查、按状态查是最高频的两个
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_logs_ticket_no ON operation_logs(ticket_no);
+CREATE INDEX IF NOT EXISTS idx_proposals_status ON ticket_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_proposals_ticket ON ticket_proposals(ticket_no);

@@ -5,12 +5,11 @@ import com.example.oaticket.model.TicketProposal;
 import com.example.oaticket.model.ToolResult;
 import com.example.oaticket.repository.TicketProposalRepository;
 import com.example.oaticket.repository.TicketRepository;
+import com.example.oaticket.utils.DateTimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -25,7 +24,6 @@ import java.util.UUID;
 public class TicketActionTool {
 
     private static final Logger log = LoggerFactory.getLogger(TicketActionTool.class);
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Set<String> ALLOWED_DECISIONS = Set.of("APPROVED", "REJECTED");
 
     private final TicketRepository ticketRepository;
@@ -74,7 +72,7 @@ public class TicketActionTool {
         String proposalId = "P-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         TicketProposal proposal = new TicketProposal(
                 null, proposalId, ticket.ticketNo(), ticket.status(), normalized, reason.trim(),
-                TicketProposal.STATUS_PENDING, LocalDateTime.now().format(TIME_FORMAT), null, null);
+                TicketProposal.STATUS_PENDING, DateTimeUtils.now(), null, null);
 
         proposalRepository.save(proposal);
 

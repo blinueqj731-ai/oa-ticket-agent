@@ -4,13 +4,12 @@ import com.example.oaticket.model.TicketProposal;
 import com.example.oaticket.repository.OperationLogRepository;
 import com.example.oaticket.repository.TicketProposalRepository;
 import com.example.oaticket.repository.TicketRepository;
+import com.example.oaticket.utils.DateTimeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
@@ -23,7 +22,6 @@ import java.util.List;
 public class TicketApprovalService {
 
     private static final Logger log = LoggerFactory.getLogger(TicketApprovalService.class);
-    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final TicketRepository ticketRepository;
     private final TicketProposalRepository proposalRepository;
@@ -59,7 +57,7 @@ public class TicketApprovalService {
             throw new IllegalStateException("工单状态已变化，提案失效，请重新生成提案");
         }
 
-        String now = LocalDateTime.now().format(TIME_FORMAT);
+        String now = DateTimeUtils.now();
         int decided = proposalRepository.updateDecision(
                 proposalId, TicketProposal.STATUS_CONFIRMED, operator.trim(), now);
         if (decided == 0) {
@@ -94,7 +92,7 @@ public class TicketApprovalService {
         }
 
         TicketProposal proposal = requirePending(proposalId);
-        String now = LocalDateTime.now().format(TIME_FORMAT);
+        String now = DateTimeUtils.now();
 
         int decided = proposalRepository.updateDecision(
                 proposalId, TicketProposal.STATUS_REJECTED, operator.trim(), now);

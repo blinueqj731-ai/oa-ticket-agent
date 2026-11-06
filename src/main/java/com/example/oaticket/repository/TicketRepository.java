@@ -48,15 +48,6 @@ public class TicketRepository {
     }
 
     /**
-     * 按状态统计数量，用于健康检查或统计接口
-     */
-    public int countByStatus(String status) {
-        String sql = "SELECT COUNT(*) FROM tickets WHERE status = ?";
-        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, status);
-        return count == null ? 0 : count;
-    }
-
-    /**
      * 带状态校验地更新工单状态
      *
      * SQL 里带 oldStatus 条件，是乐观锁：只有当前状态仍等于提案时记录的状态才更新。

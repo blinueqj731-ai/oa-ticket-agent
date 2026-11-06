@@ -76,9 +76,13 @@ public record ToolResult<T>(boolean success, T data, String message) { ... }
 oa-ticket-agent/
 ├── src/main/java/com/example/oaticket/
 │   ├── controller/      对外 HTTP 接口
-│   ├── repository/      数据访问（JdbcTemplate 手写 SQL）
-│   ├── tool/            给 Agent 调用的数据查询工具
+│   ├── service/         业务编排（Agent 循环、确认事务）
+│   ├── tool/            给模型调用的工具，只读查询与写操作提案
+│   ├── repository/      数据访问，JdbcTemplate 手写 SQL
+│   ├── client/          大模型调用与协议对象
+│   ├── config/          配置绑定
 │   ├── model/           数据模型
+│   ├── utils/           通用工具
 │   └── OaTicketAgentApplication.java
 ├── src/main/resources/
 │   ├── application.yml
@@ -160,7 +164,16 @@ curl -X POST http://localhost:8080/api/approvals/P-1A2B3C4D/reject \
 mvn test
 ```
 
-覆盖三个查询工具共 10 个用例：正常查询、不存在的编号、空参数、部门经理没有上级、以及"请假单金额必须是 null 而不是 0"这类边界情况。
+30 个用例，分四组：
+
+| 测试类 | 用例数 | 覆盖 |
+|---|---|---|
+| `ToolTest` | 10 | 三个只读工具：正常查询、空参数、编号不存在、金额为 null |
+| `TicketActionToolTest` | 7 | 写操作：待处理工单可提案、已处理工单拒绝、缺少理由拒绝、提案不改状态 |
+| `TicketApprovalServiceTest` | 8 | 确认与驳回：状态变更、审计留痕、重复确认防护、提案失效检测 |
+| `AgentServiceTest` | 5 | Agent 循环：正常收敛、步数超限降级、token 预算降级 |
+
+`AgentServiceTest` 用 Mockito 替掉模型客户端，否则降级分支无法稳定复现——真实模型不会配合演出。
 
 ---
 

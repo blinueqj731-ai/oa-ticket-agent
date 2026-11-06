@@ -39,3 +39,13 @@ agent:
   timeout-seconds: 60
   # 单次处理的 token 上限，实测 3 步工单约 3200 token
   token-budget: 8000
+
+embedding:
+  # 百炼的向量模型，和对话模型共用同一个 apiKey 与 base-url
+  model: text-embedding-v3
+  # 检索返回几条，3 条够用：多了会稀释模型的注意力
+  top-k: 3
+  # 相似度低于此值直接丢弃，宁可不给也不要给不相关的
+  # 0.6 是在 20 条工单上实测出来的：相关查询的 top3 落在 0.65~0.84，
+  # 无关查询最高只到 0.51（"今天食堂吃什么"能召回到病假单），0.6 正好卡在两者之间
+  min-score: 0.6

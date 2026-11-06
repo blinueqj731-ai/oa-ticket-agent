@@ -25,15 +25,17 @@ public class ToolRegistry {
     private final EmployeeTool employeeTool;
     private final RuleTool ruleTool;
     private final TicketActionTool ticketActionTool;
+    private final SimilarTicketTool similarTicketTool;
     private final ObjectMapper objectMapper;
 
     public ToolRegistry(TicketTool ticketTool, EmployeeTool employeeTool,
                         RuleTool ruleTool, TicketActionTool ticketActionTool,
-                        ObjectMapper objectMapper) {
+                        SimilarTicketTool similarTicketTool, ObjectMapper objectMapper) {
         this.ticketTool = ticketTool;
         this.employeeTool = employeeTool;
         this.ruleTool = ruleTool;
         this.ticketActionTool = ticketActionTool;
+        this.similarTicketTool = similarTicketTool;
         this.objectMapper = objectMapper;
     }
 
@@ -42,7 +44,7 @@ public class ToolRegistry {
      *
      * description 写得好不好，直接决定模型会不会在正确的时机调对工具
      *
-     * @return 四个工具的定义列表
+     * @return 五个工具的定义列表
      */
     public List<ToolDefinition> definitions() {
         return List.of(
@@ -83,7 +85,16 @@ public class ToolRegistry {
                                                 "description", "目标状态：APPROVED 表示通过，REJECTED 表示驳回"),
                                         "reason", Map.of("type", "string",
                                                 "description", "变更理由，会写入审计日志，不能为空")),
-                                "required", List.of("ticketNo", "decision", "reason"))));
+                                "required", List.of("ticketNo", "decision", "reason"))),
+                ToolDefinition.function(
+                        "find_similar_tickets",
+                        "按问题描述检索历史相似工单，返回单号、类型、标题、金额、状态和相似度。"
+                                + "需要参考「以前类似单子怎么批的」时调用",
+                        Map.of("type", "object",
+                                "properties", Map.of(
+                                        "query", Map.of("type", "string",
+                                                "description", "工单标题或内容摘要，例如「差旅费 4800 元 住宿 报销」")),
+                                "required", List.of("query"))));
     }
 
     /**
@@ -108,6 +119,7 @@ public class ToolRegistry {
                 case "get_rules" -> ruleTool.getRules(text(args, "ticketType"));
                 case "propose_ticket_decision" -> ticketActionTool.proposeDecision(
                         text(args, "ticketNo"), text(args, "decision"), text(args, "reason"));
+                case "find_similar_tickets" -> similarTicketTool.findSimilarTickets(text(args, "query"));
                 default -> Map.of("success", false, "message", "不存在名为 " + name + " 的工具");
             };
             return objectMapper.writeValueAsString(result);

@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS ticket_proposals (
     operator    TEXT
 );
 
+-- 历史工单向量表
+-- 单独建表而不往 tickets 加列，是为了让向量与业务数据解耦：
+-- 换 embedding 模型时只需清空这张表重建，不碰工单数据
+CREATE TABLE IF NOT EXISTS ticket_embedding (
+    ticket_no TEXT PRIMARY KEY,
+    text      TEXT NOT NULL,
+    embedding BLOB NOT NULL
+);
+
 -- 常用查询加索引：按单号查、按状态查是最高频的两个
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_logs_ticket_no ON operation_logs(ticket_no);

@@ -81,6 +81,18 @@ public record ToolResult<T>(boolean success, T data, String message) { ... }
 
 相似度阈值 0.6 是实测出来的：相关查询的 top3 落在 0.65~0.84，无关查询（"今天食堂吃什么"）最高只到 0.51。取两者中间的值既能挡住误召，又不会漏掉真命中。
 
+**请求链路用 trace_id 串起来**
+
+每个请求进第一个过滤器时分配一个 16 位 trace_id 放进 MDC，日志格式里带出来。同一次请求的模型调用、工具执行、异常，全部共享同一个号。
+
+错误响应也会带上它——用户报障时只需要给一个字符串，不用描述"我什么时候点的""参数是什么"。
+
+**重试只针对可重试的失败**
+
+网络异常和 5xx / 429 会自动重试，指数退避 800ms、1600ms 再加随机抖动，最多三次。4xx 直接抛出——参数错了重试一百次结果也一样，只会浪费时间。
+
+加抖动的原因：多个请求同时失败时，避免它们在同一毫秒集体重试，把刚缓过来的服务端再打崩一次。
+
 ---
 
 ## 目录结构
@@ -92,6 +104,7 @@ oa-ticket-agent/
 │   ├── service/         业务编排（Agent 循环、确认事务）
 │   ├── tool/            给模型调用的工具，只读查询与写操作提案
 │   ├── rag/             向量化与相似工单检索
+│   ├── trace/           请求链路标识
 │   ├── repository/      数据访问，JdbcTemplate 手写 SQL
 │   ├── client/          大模型调用与协议对象
 │   ├── config/          配置绑定
@@ -164,6 +177,9 @@ curl -X POST http://localhost:8080/api/approvals/P-1A2B3C4D/confirm \
 curl -X POST http://localhost:8080/api/approvals/P-1A2B3C4D/reject \
   -H "Content-Type: application/json" \
   -d '{"operator":"张三"}'
+
+# 运行指标：成功率、P95 延迟、token 消耗、工具失败率（重启清零）
+curl http://localhost:8080/api/metrics
 ```
 
 数据库文件 `oa-ticket.db` 会在首次启动时自动生成，包含 10 个员工、8 条审批规则、20 张工单。
@@ -200,6 +216,7 @@ mvn test
 - [x] 循环有界控制（步数 / 超时 / token 预算）
 - [x] 危险操作人工确认
 - [x] 历史工单语义检索（RAG）
+- [x] 链路追踪与异常重试
 - [ ] 链路追踪与结构化日志
 - [ ] 评测集与基线报告
 - [ ] Docker 部署

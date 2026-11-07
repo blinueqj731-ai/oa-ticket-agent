@@ -41,7 +41,8 @@ class AgentServiceTest {
         toolRegistry = mock(ToolRegistry.class);
         when(toolRegistry.definitions()).thenReturn(List.<ToolDefinition>of());
         when(toolRegistry.execute(any())).thenReturn("{\"success\":true}");
-        service = new AgentService(llmClient, toolRegistry, new AgentProperties(3, 60, 8000));
+        service = new AgentService(llmClient, toolRegistry,
+                new AgentProperties(3, 60, 8000), new MetricsService());
     }
 
     @Test
@@ -91,7 +92,8 @@ class AgentServiceTest {
     @Test
     @DisplayName("token 超过预算时在下一轮开始前停下")
     void handle_overBudget_degradeByToken() {
-        AgentService tight = new AgentService(llmClient, toolRegistry, new AgentProperties(10, 60, 100));
+        AgentService tight = new AgentService(llmClient, toolRegistry,
+                new AgentProperties(10, 60, 100), new MetricsService());
         when(llmClient.chat(anyList(), anyList()))
                 .thenReturn(reply(null, List.of(toolCall("get_ticket")), 500));
 

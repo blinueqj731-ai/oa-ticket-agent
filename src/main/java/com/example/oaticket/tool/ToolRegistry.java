@@ -2,6 +2,7 @@ package com.example.oaticket.tool;
 
 import com.example.oaticket.client.dto.ToolCall;
 import com.example.oaticket.client.dto.ToolDefinition;
+import com.example.oaticket.service.MetricsService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -27,16 +28,19 @@ public class ToolRegistry {
     private final TicketActionTool ticketActionTool;
     private final SimilarTicketTool similarTicketTool;
     private final ObjectMapper objectMapper;
+    private final MetricsService metricsService;
 
     public ToolRegistry(TicketTool ticketTool, EmployeeTool employeeTool,
                         RuleTool ruleTool, TicketActionTool ticketActionTool,
-                        SimilarTicketTool similarTicketTool, ObjectMapper objectMapper) {
+                        SimilarTicketTool similarTicketTool, ObjectMapper objectMapper,
+                        MetricsService metricsService) {
         this.ticketTool = ticketTool;
         this.employeeTool = employeeTool;
         this.ruleTool = ruleTool;
         this.ticketActionTool = ticketActionTool;
         this.similarTicketTool = similarTicketTool;
         this.objectMapper = objectMapper;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -122,8 +126,12 @@ public class ToolRegistry {
                 case "find_similar_tickets" -> similarTicketTool.findSimilarTickets(text(args, "query"));
                 default -> Map.of("success", false, "message", "不存在名为 " + name + " 的工具");
             };
+            // 只统计技术失败（抛异常）。业务层的 ToolResult.fail 属于正常返回，
+            // 模型自己能处理，不需要计入错误率
+            metricsService.recordToolCall(true);
             return objectMapper.writeValueAsString(result);
         } catch (Exception e) {
+            metricsService.recordToolCall(false);
             // 参数解析失败或工具抛异常时，把原因交回给模型，让它自己决定换参数重试还是如实告知
             log.warn("工具执行失败 name={} 原因={}", name, e.getMessage());
             return "{\"success\":false,\"message\":\"" + e.getMessage().replace("\"", "'") + "\"}";

@@ -24,6 +24,9 @@ spring:
 logging:
   level:
     com.example.oaticket: DEBUG
+  pattern:
+    # %X{traceId} 从 MDC 里取，一次请求的所有日志都能用同一个号串起来
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-no-trace}] %logger{24} - %msg%n"
 
 llm:
   # 密钥只从环境变量读，不写进配置文件

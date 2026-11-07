@@ -11,11 +11,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 大模型调用客户端
@@ -28,6 +30,11 @@ public class LlmClient {
     private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
     private static final int MAX_OUTPUT_TOKENS = 1024;
     private static final double TEMPERATURE = 0.7;
+
+    /** 首次失败后的等待基数，实际等待是 800ms、1600ms 加随机抖动 */
+    private static final long BASE_BACKOFF_MS = 800;
+    private static final long MAX_JITTER_MS = 400;
+    private static final int MAX_ATTEMPTS = 3;
 
     private final LlmProperties properties;
     private final RestClient restClient;
@@ -96,32 +103,69 @@ public class LlmClient {
                 false,
                 false);
 
-        long start = System.currentTimeMillis();
-        ChatResponse response;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            long start = System.currentTimeMillis();
+            try {
+                ChatResponse response = restClient.post()
+                        .uri("/chat/completions")
+                        .body(request)
+                        .retrieve()
+                        .body(ChatResponse.class);
+                long elapsed = System.currentTimeMillis() - start;
+
+                if (response == null) {
+                    throw new IllegalStateException("大模型返回为空");
+                }
+
+                log.info("大模型调用完成 attempt={} 耗时={}ms token={}+{} 可用工具数={}",
+                        attempt, elapsed, promptTokens(response), completionTokens(response),
+                        tools == null ? 0 : tools.size());
+                return response;
+            } catch (RestClientResponseException e) {
+                int status = e.getStatusCode().value();
+                // 4xx 是请求本身有问题，重试多少次结果都一样，直接抛出
+                if (!isRetryable(status)) {
+                    throw new IllegalStateException("调用大模型失败，HTTP " + status
+                            + "：" + e.getResponseBodyAsString(), e);
+                }
+                if (attempt == MAX_ATTEMPTS) {
+                    throw new IllegalStateException("调用大模型失败，已重试 " + MAX_ATTEMPTS
+                            + " 次，HTTP " + status, e);
+                }
+                log.warn("大模型返回 {}，第 {} 次重试", status, attempt);
+                sleepBeforeRetry(attempt);
+            } catch (ResourceAccessException e) {
+                // 连接失败和读写超时都落在这里，统一按网络异常处理
+                if (attempt == MAX_ATTEMPTS) {
+                    throw new IllegalStateException("调用大模型失败，网络异常，已重试 "
+                            + MAX_ATTEMPTS + " 次：" + e.getMessage(), e);
+                }
+                log.warn("大模型请求异常，第 {} 次重试：{}", attempt, e.getMessage());
+                sleepBeforeRetry(attempt);
+            } catch (Exception e) {
+                // 解析失败之类的非网络问题，重试无意义
+                throw new IllegalStateException("调用大模型异常：" + e.getMessage(), e);
+            }
+        }
+
+        throw new IllegalStateException("调用大模型失败，重试次数已用尽");
+    }
+
+    private boolean isRetryable(int status) {
+        // 5xx 是服务端问题，429 是限流，都值得等一会儿再试
+        return status >= 500 || status == 429;
+    }
+
+    private void sleepBeforeRetry(int attempt) {
+        long backoff = BASE_BACKOFF_MS * (1L << (attempt - 1));
+        // 加抖动的目的：多个请求同时失败时，避免它们在同一毫秒集体重试打爆服务端
+        long jitter = ThreadLocalRandom.current().nextLong(0, MAX_JITTER_MS + 1);
         try {
-            response = restClient.post()
-                    .uri("/chat/completions")
-                    .body(request)
-                    .retrieve()
-                    .body(ChatResponse.class);
-        } catch (RestClientResponseException e) {
-            // 把服务端返回的错误体带出来，否则只能看到一个 400，不知道是参数错了还是模型名不对
-            throw new IllegalStateException("调用大模型失败，HTTP " + e.getStatusCode().value()
-                    + "：" + e.getResponseBodyAsString(), e);
-        } catch (Exception e) {
-            throw new IllegalStateException("调用大模型异常：" + e.getMessage(), e);
+            Thread.sleep(backoff + jitter);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("重试等待被中断", e);
         }
-        long elapsed = System.currentTimeMillis() - start;
-
-        if (response == null) {
-            throw new IllegalStateException("大模型返回为空");
-        }
-
-        log.info("大模型调用完成 model={} 耗时={}ms token={}+{} 可用工具数={}",
-                properties.model(), elapsed, promptTokens(response), completionTokens(response),
-                tools == null ? 0 : tools.size());
-
-        return response;
     }
 
     private int promptTokens(ChatResponse response) {

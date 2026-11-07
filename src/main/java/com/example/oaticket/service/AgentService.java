@@ -62,11 +62,14 @@ public class AgentService {
     private final LlmClient llmClient;
     private final ToolRegistry toolRegistry;
     private final AgentProperties agentProperties;
+    private final MetricsService metricsService;
 
-    public AgentService(LlmClient llmClient, ToolRegistry toolRegistry, AgentProperties agentProperties) {
+    public AgentService(LlmClient llmClient, ToolRegistry toolRegistry,
+                        AgentProperties agentProperties, MetricsService metricsService) {
         this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
         this.agentProperties = agentProperties;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -80,6 +83,24 @@ public class AgentService {
             throw new IllegalArgumentException("问题内容不能为空");
         }
 
+        long start = System.currentTimeMillis();
+        try {
+            AgentResult result = runLoop(question);
+            long elapsed = System.currentTimeMillis() - start;
+            // 降级单独统计：降级率高说明步数或预算设得偏紧，看指标就能发现
+            if (result.degraded()) {
+                metricsService.recordDegraded(elapsed, result.totalTokens());
+            } else {
+                metricsService.recordSuccess(elapsed, result.totalTokens());
+            }
+            return result;
+        } catch (RuntimeException e) {
+            metricsService.recordFailure(System.currentTimeMillis() - start);
+            throw e;
+        }
+    }
+
+    private AgentResult runLoop(String question) {
         List<ChatRequest.Message> messages = new ArrayList<>();
         messages.add(ChatRequest.Message.system(SYSTEM_PROMPT));
         messages.add(ChatRequest.Message.user(question));

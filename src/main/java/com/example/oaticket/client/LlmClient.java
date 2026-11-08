@@ -28,7 +28,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
-    private static final int MAX_OUTPUT_TOKENS = 1024;
+    private static final int MAX_OUTPUT_TOKENS = 1500;
     private static final double TEMPERATURE = 0.7;
 
     /** 首次失败后的等待基数，实际等待是 800ms、1600ms 加随机抖动 */

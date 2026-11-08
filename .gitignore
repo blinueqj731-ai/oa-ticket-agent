@@ -31,3 +31,6 @@ logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 评测报告是运行时产物，不进版本库
+eval/report-*.md
